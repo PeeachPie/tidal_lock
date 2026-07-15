@@ -47,6 +47,7 @@ target_include_directories(app PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/src/model
     ${CMAKE_SOURCE_DIR}/src/renderer
+    ${CMAKE_SOURCE_DIR}/src/barnes_hut
 )
 
 target_link_libraries(app PRIVATE

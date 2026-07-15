@@ -20,8 +20,8 @@ const double PARTICLE_MASS    = 10;
 const double PARTICLE_RADIUS  = 100;
 const double SMOOTHING_LENGTH = 1000000 * 0.3;
 const double DENSITY_IN_REST  = 150;
-const double TEMPERATURE_K    = 30.0;
-const double VISCOSITY_K      = 0.3;
+const double TEMPERATURE_K    = 120.0;
+const double VISCOSITY_K      = 0.2;
 
 const double WATER_LAYER_THICKNESS  = 1000000; // м
 const int    WATER_PARTICLES_NUMBER = 10000;

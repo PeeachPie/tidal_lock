@@ -8,16 +8,25 @@ void Model::add_planet(std::string name, Planet planet) {
 }
 
 void Model::add_water_to_planet(std::string planet_name, int p_count, double h) {
-    const Planet planet = planets_[planet_name];
+    const Planet planet = planets_.at(planet_name);
 
     for (int i = 0; i < p_count; i++) {
         double angle = gen_angle();
         double height = gen_h(h);
 
-        Particle p(glm::dvec2{
-            (planet.r + height) * std::cos(angle) + planet.pos.x, 
-            (planet.r + height) * std::sin(angle) + planet.pos.y
-        });
+        glm::dvec2 rotation_speed = {
+            -planet.av * (planet.r + height) * std::sin(angle),
+            planet.av * (planet.r + height) * std::cos(angle)
+        };
+
+        Particle p(
+            glm::dvec2{
+                (planet.r + height) * std::cos(angle) + planet.pos.x, 
+                (planet.r + height) * std::sin(angle) + planet.pos.y
+            },
+            planet.v + rotation_speed,
+            planet.a
+        );
 
         add_particle(p);
     }
@@ -27,21 +36,6 @@ void Model::add_water_to_planet(std::string planet_name, int p_count, double h) 
 
 void Model::add_particle(Particle particle) {
     p_.push_back(particle);
-}
-
-void Model::_planets_next_step() {
-    for (auto &p: planets_) {
-        Planet& planet = p.second;
-
-        if (planet.v) {
-            double ang = current_time * (planet.v / planet.rotation_r);
-
-            planet.pos = planet.rotation_focus + glm::dvec2{
-                planet.rotation_r * glm::cos(ang), 
-                planet.rotation_r * glm::sin(ang)
-            };
-        }
-    }
 }
 
 std::unordered_map<int, std::unordered_map<int, std::vector<int>>> Model::_get_particle_grid() {
@@ -93,7 +87,7 @@ std::vector<std::vector<int>> Model::_get_neighborhoods() {
     return neighborhoods;
 }
 
-glm::dvec2 Model::_particle_gravity_forces(int i) {
+glm::dvec2 Model::_particle_gravity_forces(int i, BarnesHutQuadTree &tree) {
     glm::dvec2 gravity_forces(0);
 
     for (auto &p: planets_) {
@@ -106,35 +100,52 @@ glm::dvec2 Model::_particle_gravity_forces(int i) {
         gravity_forces += f;
     }
 
-    return gravity_forces;
+    // glm::dvec2 b { 0, 0 };
+
+    // TODO: ускорить
+    // for (int j = 0; j < p_.size(); j++) {
+    //     if (i != j) {
+    //         double r = std::max(glm::distance(p_[i].pos, p_[j].pos), p_smoothing_lenght_ * 0.3);
+    //         glm::dvec2 n = (p_[j].pos - p_[i].pos) / r;
+    //         glm::dvec2 f = (G * (p_mass_ * p_mass_) / (r * r)) * n;
+
+    //         // b += f;
+
+    //         gravity_forces += f;
+    //     }
+    // }
+
+    // std::cout << tree.calc_force(p_[i], p_mass_, i).x << ' ' << tree.calc_force(p_[i], p_mass_, i).y << ' ' << b.x << ' ' << b.y << std::endl;
+
+    return gravity_forces + tree.calc_force(p_[i], p_mass_, i);
 }
 
-glm::dvec2 Model::_get_barycenter() {
-    glm::dvec2 mr(0);
-    double tm = 0;
+glm::dvec2 Model::_planet_gravity_forces(std::string planet_name) {
+    glm::dvec2 gravity_forces(0);
+    Planet &cur_planet = planets_[planet_name];
 
     for (auto &p: planets_) {
+        if (p.first == planet_name) continue;
+
         const Planet& planet = p.second;
-        mr += planet.m * planet.pos;
-        tm += planet.m;
+
+        double r = glm::distance(cur_planet.pos, planet.pos);
+        glm::dvec2 n = (planet.pos - cur_planet.pos) / r;
+        glm::dvec2 f = (G * (planet.m * cur_planet.m) / (r * r)) * n;
+
+        gravity_forces += f;
     }
 
-    glm::dvec2 barycenter = mr / tm;
+    // TODO: ускорить
+    for (int j = 0; j < p_.size(); j++) {
+        double r = std::max(glm::distance(cur_planet.pos, p_[j].pos), p_smoothing_lenght_ * 0.3);
+        glm::dvec2 n = (p_[j].pos - cur_planet.pos) / r;
+        glm::dvec2 f = (G * (cur_planet.m * p_mass_) / (r * r)) * n;
 
-    return barycenter;
-}
+        gravity_forces += f;
+    }
 
-glm::dvec2 Model::_particle_centrifugal_forces(int i, glm::dvec2 barycenter) {
-    // glm::dvec2 barycenter = planets_["Земля"].pos + (planets_["Луна"].pos - planets_["Земля"].pos) / 10.0;
-    // double angular_velocity = MOON_VELOCITY / (glm::distance(barycenter, planets_["Луна"].pos));
-
-    glm::dvec2 r = p_[i].pos - barycenter;
-    double l = glm::length(r);
-    glm::dvec2 n = r / l;
-
-    glm::dvec2 centrifugal_force = l * (planets_["Луна"].a_v * planets_["Луна"].a_v) * p_mass_ * n;
-
-    return centrifugal_force;
+    return gravity_forces;
 }
 
 double Model::_sph_w_density(double dist) {
@@ -237,23 +248,61 @@ glm::dvec2 Model::_particle_viscosity_forces(int i, const std::vector<int> &neig
     return VISCOSITY_K * viscosity_force;
 }
 
-void Model::next_step() {
-    current_time += time_step_;
+void Model::_planets_next_step() {
+    std::map<std::string, Planet> new_planets_;
 
-    _planets_next_step();
+    // #pragma omp parallel for
+    for (auto &pr: planets_) {
+        if (pr.second.m == 0) continue;
+
+        glm::dvec2 gravity_forces = _planet_gravity_forces(pr.first);
+
+        // std::cout << "gravity_f=" << gravity_forces.x << ' ' << gravity_forces.y << '\n';
+
+        glm::dvec2 a = gravity_forces / pr.second.m;
+
+        glm::dvec2 new_pos = pr.second.pos +  pr.second.v * time_step_ + 0.5 *  pr.second.a * (time_step_ * time_step_);
+        glm::dvec2 new_v =  pr.second.v + 0.5 * (pr.second.a + a) * time_step_;
+
+        // TODO: скорее всего это не правда
+        for (int i = 0; i < p_.size(); i++) {
+            double dist = glm::distance(p_[i].pos, new_pos);
+
+            if (pr.second.r >= dist) {  // TODO: to func
+                // double r = glm::distance(p_[i].pos, pr.second.pos);
+                glm::dvec2 n = glm::normalize(pr.second.pos - p_[i].pos);
+
+                p_[i].v = new_v;
+                p_[i].a = a;
+                p_[i].pos = pr.second.pos + pr.second.r * -n;
+            }
+        }
+
+        new_planets_[pr.first] = pr.second;
+        new_planets_[pr.first].pos = new_pos;
+        new_planets_[pr.first].v = new_v;
+        new_planets_[pr.first].a = a;
+    }
+
+    planets_ = new_planets_;
+}
+
+void Model::_particles_next_step() {
+    std::vector<Particle> new_p_(p_.size());
 
     std::vector<std::vector<int>> neighborhoods = _get_neighborhoods();
 
     std::vector<double> density = _sph_calc_density(neighborhoods);
     std::vector<double> pressure = _sph_calc_pressure(density, neighborhoods);
-    glm::dvec2 barycenter = _get_barycenter();
 
-    std::vector<Particle> new_p_(p_.size());
+    BarnesHutQuadTree tree;
+    // for (int j = 0; j < p_.size(); j++) {
+    //     tree.insert(p_[j], p_mass_, j);
+    // }
 
     #pragma omp parallel for
     for (int i = 0; i < p_.size(); i++) {
-        glm::dvec2 gravity_forces = _particle_gravity_forces(i);
-        glm::dvec2 centrifugal_forces = _particle_centrifugal_forces(i, barycenter);
+        glm::dvec2 gravity_forces = _particle_gravity_forces(i, tree);
         glm::dvec2 pressure_forces = _particle_pressure_forces(i, neighborhoods[i], density, pressure);
         glm::dvec2 viscosity_forces = _particle_viscosity_forces(i, neighborhoods[i], density);
         
@@ -269,13 +318,13 @@ void Model::next_step() {
         glm::dvec2 a = 
         (
             gravity_forces + 
-            centrifugal_forces +
             0.0
         ) 
         / p_mass_ +
         (
             pressure_forces + 
-            viscosity_forces
+            viscosity_forces +
+            0.0
         ) 
         / density[i];
 
@@ -293,7 +342,7 @@ void Model::next_step() {
                 planet.pos
             );
 
-            if (planet.r >= dist) {
+            if (planet.r >= dist) {  // TODO: to func
                 double r = glm::distance(p_[i].pos, planet.pos);
                 glm::dvec2 n = glm::normalize(planet.pos - p_[i].pos);
 
@@ -311,7 +360,14 @@ void Model::next_step() {
     p_ = new_p_;
 }
 
-double Model::calc_energy() const {
+void Model::next_step() {
+    current_time += time_step_;
+
+    _planets_next_step();
+    _particles_next_step();
+}
+
+double Model::calc_energy() const { // TODO: check
     double kinetic = 0.0;
     double potential = 0.0;
 
