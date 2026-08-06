@@ -2,7 +2,6 @@
 
 LiquidsSolver::LiquidsSolver(LiquidsSettings &settings): 
     p_smoothing_length_(settings.p_smoothing_length), 
-    // p_mass_(settings.p_mass),
     p_density_in_rest_(settings.p_density_in_rest),
     p_temperature_k_(settings.p_temperature_k),
     p_viscousity_k_(settings.p_viscousity_k) {};
@@ -22,19 +21,20 @@ double LiquidsSolver::_sph_w_viscosity_laplacian(double dist) {
     return 40 * (1 - dist / p_smoothing_length_) / PI;
 }
 
+
 // double LiquidsSolver::_sph_w_density(double dist) {
 //     if (dist >= p_smoothing_length_) return 0;
-//     return 4 * pow((1 - (dist * dist) / (p_smoothing_length_ * p_smoothing_length_)), 3) / (PI * pow(1, 8));
+//     return 4 * pow((1 - (dist * dist) / (p_smoothing_length_ * p_smoothing_length_)), 3) / (PI * p_smoothing_length_ * p_smoothing_length_);
 // }
 
 // double LiquidsSolver::_sph_w_pressure_grad(double dist) {
 //     if (dist >= p_smoothing_length_) return 0;
-//     return -30 * pow(1 - dist / p_smoothing_length_, 2) / (PI * pow(1, 5));
+//     return -30 * pow(1 * (1 - dist / p_smoothing_length_), 2) / (PI * pow(p_smoothing_length_, 3));
 // }
 
 // double LiquidsSolver::_sph_w_viscosity_laplacian(double dist) {
 //     if (dist >= p_smoothing_length_) return 0;
-//     return 40 * (1 - dist / p_smoothing_length_) / (PI * pow(1, 5));
+//     return 40 * (1 - dist / p_smoothing_length_) / (PI * pow(p_smoothing_length_, 4));
 // }
 
 double LiquidsSolver::_sph_calc_particle_density(int i, const std::vector<Particle> &p, const std::vector<int> &neighborhood) {
