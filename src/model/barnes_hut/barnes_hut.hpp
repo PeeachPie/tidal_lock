@@ -15,15 +15,15 @@ struct Data {
         id_ = -1;
     }
 
-    void append_particle(Particle p, double p_mass) {
-        sum_xm_ += p.pos * p_mass;
-        total_mass_ += p_mass;
+    void append_particle(Particle p) {
+        sum_xm_ += p.pos * p.m;
+        total_mass_ += p.m;
 
         clear_id();
     }
 
-    void add_particle(Particle p, double p_mass, int id) {
-        append_particle(p, p_mass);
+    void add_particle(Particle p, int id) {
+        append_particle(p);
         id_ = id;
     }
 
@@ -37,7 +37,6 @@ struct Data {
 
 class Node {
 public: // TODO: private
-    // t - top, b - bottom
     Node *tl_ = nullptr; 
     Node *tr_ = nullptr; 
     Node *bl_ = nullptr;
@@ -90,13 +89,13 @@ public:
         empty_ = false;
     }
 
-    void append_particle(Particle p, double p_mass) {
-        data_.append_particle(p, p_mass);
+    void append_particle(Particle p) {
+        data_.append_particle(p);
     }
 
-    void add_particle(Particle p, double p_mass, int id) {
+    void add_particle(Particle p, int id) {
         point_pos_ = p.pos;
-        data_.add_particle(p, p_mass, id);
+        data_.add_particle(p, id);
         empty_ = false;
     }
 
@@ -132,30 +131,32 @@ public:
 class BarnesHutQuadTree {
 private:
     Node *root_ = nullptr;
+    double p_radius_;
+    double theta_;
 public:
     int cnt_ = 0; // TODO: remove
-    double theta_;
 
-    BarnesHutQuadTree(double theta=0.5): root_(new Node()), theta_(theta) {};
-
-    BarnesHutQuadTree(double bound, double theta): 
-        root_(new Node({-bound, bound}, {bound, -bound})),
+    BarnesHutQuadTree(double p_radius, double theta=0.5): 
+        root_(new Node()), 
+        p_radius_(p_radius), 
         theta_(theta) 
     {};
 
-    void insert(Particle &p, double p_mass, int id) {
+    BarnesHutQuadTree(double p_radius, double theta, double bound): 
+        root_(new Node({-bound, bound}, {bound, -bound})),
+        p_radius_(p_radius),
+        theta_(theta) 
+    {};
+
+    void insert(const Particle &p, int id) {
         assert(root_->in_bounds(p.pos));
-        _insert(root_, p, p_mass, id);
+        _insert(root_, p, id);
     }
 
     // TODO: id only
-    glm::dvec2 calc_force(Particle &p, double p_mass, int id) const {
+    glm::dvec2 calc_force(const Particle &p, int id) const {
         assert(root_->in_bounds(p.pos));
-        return _calc_force(root_, p, p_mass, id);
-    }
-
-    void print() const {
-        print_node(root_, 0);
+        return _calc_force(root_, p, id);
     }
 
     ~BarnesHutQuadTree() {
@@ -163,31 +164,33 @@ public:
     }
     
 private:
-    void _insert(Node *node, Particle &p, double p_mass, int id) {
+    void _insert(Node *node, const Particle &p, int id) {
         if (node == nullptr)
             throw std::runtime_error("`_insert` called on null");
+        if (p.m == 0.0)
+            throw std::runtime_error("`_insert` called on empty particle");
 
         if (!node->in_bounds(p.pos)) return;
 
         if (node->empty()) {
-            node->add_particle(p, p_mass, id);
+            node->add_particle(p, id);
         }
         else {
             if (!node->is_splitted()) {
                 node->split();
                 cnt_ += 4;
             }
-            node->append_particle(p, p_mass);
+            node->append_particle(p);
 
             // TODO: -> if
-            _insert(node->tl_, p, p_mass, id);
-            _insert(node->tr_, p, p_mass, id);
-            _insert(node->br_, p, p_mass, id);
-            _insert(node->bl_, p, p_mass, id);
+            _insert(node->tl_, p, id);
+            _insert(node->tr_, p, id);
+            _insert(node->br_, p, id);
+            _insert(node->bl_, p, id);
         }
     }
 
-    glm::dvec2 _calc_force(Node *node, Particle &p, double p_mass, int id) const {
+    glm::dvec2 _calc_force(Node *node, const Particle &p, int id) const {
         Data data = node->get_data();
 
         if (data.id_ == id || node->empty()) {
@@ -201,69 +204,18 @@ private:
 
         if (s/d > theta_ && node->is_splitted()) {
             return 
-                _calc_force(node->tl_, p, p_mass, id) + 
-                _calc_force(node->tr_, p, p_mass, id) +
-                _calc_force(node->bl_, p, p_mass, id) + 
-                _calc_force(node->br_, p, p_mass, id);
+                _calc_force(node->tl_, p, id) + 
+                _calc_force(node->tr_, p, id) +
+                _calc_force(node->bl_, p, id) + 
+                _calc_force(node->br_, p, id);
         }
         else {
-            // std::cout << "debug: " << data.id_ << ' ' << data.total_mass_ << '\n';
-
-            double r = std::max(glm::distance(p.pos, mass_center), SMOOTHING_LENGTH * 0.3); // TODO: explicit
+            double r = glm::distance(p.pos, mass_center);
             glm::dvec2 n = (mass_center - p.pos) / r;
-            glm::dvec2 f = (G * (data.total_mass_ * p_mass) / (r * r)) * n;
-
+            r = std::max(r, p_radius_);
+            glm::dvec2 f = ((((G * data.total_mass_) * p.m) / r) / r) * n;
+            
             return f;
-        }
-    }
-
-    void print_node(const Node* node, int depth) const {
-        if (node == nullptr)
-            return;
-
-        std::string indent(depth * 4, ' ');
-
-        std::cout << indent << "Node ";
-
-        std::cout << "[(" << node->tl_bound_.x << ", " << node->tl_bound_.y
-                << ") -> ("
-                << node->br_bound_.x << ", " << node->br_bound_.y << ")] ";
-
-        if (node->empty()) {
-            std::cout << "EMPTY";
-        } else {
-            const Data data = node->get_data();
-
-            std::cout
-                << "mass=" << data.total_mass_
-                << "  sum_xm=(" << data.sum_xm_.x << ", " << data.sum_xm_.y << ")";
-
-            if (data.id_ != -1)
-                std::cout << "  particle_id=" << data.id_;
-            else
-                std::cout << "  particle_id=<internal>";
-
-            auto p = node->get_point_pos();
-            std::cout << "  pos=(" << p.x << ", " << p.y << ")";
-        }
-
-        if (node->is_splitted())
-            std::cout << " SPLIT";
-
-        std::cout << '\n';
-
-        if (node->is_splitted()) {
-            std::cout << indent << " TL:\n";
-            print_node(node->tl_, depth + 1);
-
-            std::cout << indent << " TR:\n";
-            print_node(node->tr_, depth + 1);
-
-            std::cout << indent << " BL:\n";
-            print_node(node->bl_, depth + 1);
-
-            std::cout << indent << " BR:\n";
-            print_node(node->br_, depth + 1);
         }
     }
 };

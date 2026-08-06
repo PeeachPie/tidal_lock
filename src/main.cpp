@@ -1,73 +1,98 @@
 #include "model.hpp"
 #include "renderer.hpp"
-#include "barnes_hut.hpp"
+#include "utils.hpp"
 #include <chrono>
 #include <thread>
 
+const double SMOOTHING_LENGTH = 1000000 * 0.3;
+const double DENSITY_IN_REST  = 1e20 * 5;
+const double TEMPERATURE_K    = 15.0;
+const double VISCOSITY_K      = 1e19;
+
+const double SHEAR_MODULUS = 1e28 * 2;
+const double BULK_MODULUS = 1e29 * 3;
+
+const double PARTICLE_RADIUS  = 10000;
+const double BARNES_HUT_THETA = 0.5;
+
+const double TIME_DELTA = 3;
+
+const double SCALE = MOON_EARTH_DIST / 20;
+
+// const double WATER_LAYER_THICKNESS  = 1000000; // м
+const int    WATER_PARTICLES_NUMBER = 500;
+
 int main() {
-    Model model(SMOOTHING_LENGTH, TIME_DELTA, MOON_EARTH_DIST / 20); // TODO: scale
+    LiquidsSettings l_settings {
+        SMOOTHING_LENGTH,
+        DENSITY_IN_REST,
+        TEMPERATURE_K * 1.5,
+        VISCOSITY_K * 0.02
+    };
+
+    ElasticSolidsSettings e_settings {
+        SMOOTHING_LENGTH * 200,
+        SHEAR_MODULUS,
+        BULK_MODULUS
+    };
+
+    GravitySettings g_settings {
+        PARTICLE_RADIUS,
+        BARNES_HUT_THETA,
+        INF
+    };
+
+    ModelSettings settings {
+        l_settings,
+        e_settings,
+        g_settings,
+        TIME_DELTA,
+        SCALE
+    };
+
+    Model model(settings); // TODO: scale
 
     Planet Earth {
         glm::dvec2 { 0, 0 },
         EARTH_RADIUS,
         EARTH_MASS,
-        glm::dvec2 { 0, -3222 },
+        glm::dvec2 { 0, 0 },
     };
 
     Planet Moon {
         glm::dvec2 { MOON_EARTH_DIST / 20, 0 },
         MOON_RADIUS,
-        EARTH_MASS,
-        glm::dvec2 { 0, 3222 },
+        MOON_MASS,
+        glm::dvec2 { 0, calc_orbital_velocity(EARTH_MASS, MOON_EARTH_DIST / 15) },
         // glm::dvec2 { 0, 0 },
-        // MOON_ANGULAR_VELOCITY * 300
+        // MOON_ANGULAR_VELOCITY * 200 
     };
 
     model.add_planet("Земля", Earth);
-    model.add_planet("Луна", Moon);
-
-    model.add_water_to_planet("Земля", WATER_PARTICLES_NUMBER, WATER_LAYER_THICKNESS);
-    // model.add_water_to_planet("Луна", WATER_PARTICLES_NUMBER, MOON_RADIUS);
+    // model.add_particle_planet(Moon, WATER_PARTICLES_NUMBER);
+    model.add_particle_satellite("Земля", Moon, WATER_PARTICLES_NUMBER, calc_orbital_velocity(EARTH_MASS, MOON_EARTH_DIST / 20));
 
     Renderer renderer;
 
     renderer.init();
 
     while (true) {
+        int step = 40;
 
-        // auto start = std::chrono::high_resolution_clock::now();
-        // for (int i = 0; i < 10; i++) {
+        auto start = std::chrono::high_resolution_clock::now();
+        auto end = start;
+
+        int cnt = 0;
+        while (std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() < step) {
             model.next_step();
-        // }
-        // auto end = std::chrono::high_resolution_clock::now();
+            end = std::chrono::high_resolution_clock::now();
+            cnt++;
+        }
 
-        // auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-        // std::cout << "next_step: " << duration.count() << " ms\n";
+        std::cout << "steps in " << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() << " ms: " << cnt << '\n';
 
         renderer.tick(model.get_frame());
 
         // std::this_thread::sleep_for(std::chrono::milliseconds(2000));
     }
-
-    // BarnesHutQuadTree tree(20);
-
-    // Particle a({10, 10});
-    // Particle b({5, 5});
-    // Particle c({0, 0});
-    // Particle d({-5, -5});
-    // Particle e({-10, -10});
-    // Particle f({-5, 5});
-
-    // tree.insert(a, 1, 1);
-    // tree.insert(b, 1, 2);
-    // tree.insert(c, 1, 3);
-    // tree.insert(d, 1, 4);
-    // tree.insert(e, 1, 5);
-    // tree.insert(f, 1, 6);
-
-    // glm::dvec2 fs = tree.calc_force(c, 1, 3);
-
-    // std::cout << fs.x << ' ' << fs.y << '\n';
-
-    // tree.print();
 }
