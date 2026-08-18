@@ -13,7 +13,6 @@
 #include "neighborhood_search.hpp"
 
 struct LiquidsSettings {
-    // double p_mass;
     double p_smoothing_length;
     double p_density_in_rest;
     double p_temperature_k;
@@ -22,7 +21,6 @@ struct LiquidsSettings {
 
 class LiquidsSolver {
 private:
-    // double p_mass_;
     double p_smoothing_length_;
     double p_density_in_rest_;
     double p_temperature_k_;
@@ -31,7 +29,7 @@ private:
 public:
     LiquidsSolver(LiquidsSettings &settings);
 
-    std::vector<glm::dvec2> calc_forces(const std::vector<Particle> &p);
+    std::pair<std::vector<glm::dvec2>, std::vector<glm::dvec2>> calc_forces(const std::vector<Particle> &p);
 
 private:
     double _sph_calc_particle_density(

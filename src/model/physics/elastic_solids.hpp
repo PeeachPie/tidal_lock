@@ -16,6 +16,7 @@ struct ElasticSolidsSettings {
     double p_smoothing_length;
     double p_shear_modulus;
     double p_bulk_modulus;
+    double p_eta_damping;
 };
 
 class ElasticSolidsSolver {
@@ -23,6 +24,7 @@ private:
     double p_smoothing_length_;
     double p_shear_modulus_;
     double p_bulk_modulus_;
+    double p_eta_damping_;
 
     bool initial_state_fixed_ = false;
 
@@ -37,7 +39,7 @@ private:
 
 public:
     ElasticSolidsSolver(ElasticSolidsSettings &settings);
-    std::vector<glm::dvec2> calc_forces(const std::vector<Particle> &p);
+    std::pair<std::vector<glm::dvec2>, std::vector<glm::dvec2>> calc_forces(const std::vector<Particle> &p);
 
 private:
     void _fix_initial_state(const std::vector<Particle> &p);
@@ -80,11 +82,23 @@ private:
     );
 
     glm::dmat2 _infinitesimal_strain_tensor(glm::dmat2 deformation_grad);
+    glm::dmat2 _green_strain_tensor(glm::dmat2 F); // более точный
     glm::dmat2 _piola_kirchhoff_stress_tensor(glm::dmat2 infinitesimal_strain_tensor);
 
-    std::pair<std::vector<glm::dmat2>, std::vector<glm::dmat2>> _sph_calc_stress_tensors(
-        const std::vector<Particle> &p
+    glm::dmat2 _sph_calc_particle_velocity_gradient(
+        int i,
+        const std::vector<Particle> &p, 
+        glm::dmat2 R
     );
+
+    glm::dvec2 _sph_particle_damping_force(
+        int i,
+        const std::vector<glm::dmat2> &damping_stress,
+        const std::vector<glm::dmat2> &rotation
+    );
+
+    std::tuple<std::vector<glm::dmat2>, std::vector<glm::dmat2>, std::vector<glm::dmat2>> 
+    _sph_calc_stress_tensors(const std::vector<Particle> &p);
 
     glm::dvec2 _sph_particle_elastic_force(
         int i,

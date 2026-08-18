@@ -3,7 +3,8 @@
 ElasticSolidsSolver::ElasticSolidsSolver(ElasticSolidsSettings &settings): 
     p_smoothing_length_(settings.p_smoothing_length), 
     p_shear_modulus_(settings.p_shear_modulus),
-    p_bulk_modulus_(settings.p_bulk_modulus) {};
+    p_bulk_modulus_(settings.p_bulk_modulus),
+    p_eta_damping_(settings.p_eta_damping) {};
 
 std::vector<std::unordered_map<int, glm::dvec2>> ElasticSolidsSolver::_calc_initial_offsets(
     const std::vector<Particle> &p,
@@ -22,7 +23,7 @@ std::vector<std::unordered_map<int, glm::dvec2>> ElasticSolidsSolver::_calc_init
 
 double ElasticSolidsSolver::_sph_w_density(double dist) {
     if (dist >= p_smoothing_length_) return 0;
-    return 4 * pow((1 - (dist * dist) / (p_smoothing_length_ * p_smoothing_length_)), 3) / PI;
+    return 4 * pow((1 - (dist * dist) / (p_smoothing_length_ * p_smoothing_length_)), 3) / (PI * p_smoothing_length_ * p_smoothing_length_);
 }
 
 double ElasticSolidsSolver::_sph_calc_particle_density(
@@ -63,7 +64,7 @@ void ElasticSolidsSolver::_fix_initial_state(const std::vector<Particle> &p) {
 
 double ElasticSolidsSolver::_sph_w_grad(double dist) {
     if (dist >= p_smoothing_length_) return 0;
-    return -30 * pow(1 * (1 - dist / p_smoothing_length_), 2) / PI;
+    return -30 * pow(1 * (1 - dist / p_smoothing_length_), 2) / (PI * pow(p_smoothing_length_, 3));
 }
 
 std::vector<double> ElasticSolidsSolver::_sph_calc_volumes(const std::vector<Particle> &p, const std::vector<double> &density) {
@@ -96,10 +97,8 @@ std::vector<std::unordered_map<int, glm::dvec2>>
 ElasticSolidsSolver::_sph_calc_corrected_kernel_gradients(const std::vector<Particle> &p) {
     std::vector<std::unordered_map<int, glm::dvec2>> corrected_kernel_gradients(p.size());
 
-    // TODO: #pragma omp parallel for
     for (int i = 0; i < p.size(); i++) {
         glm::dmat2 L = _sph_correction_matrix(i, p);
-        // TODO: #pragma omp parallel for
         for (int j: initial_neighborhoods_[i]) {
             if (i == j) corrected_kernel_gradients[i][j] = glm::dvec2(0.0, 0.0);
             else {
@@ -120,7 +119,6 @@ glm::dmat2 ElasticSolidsSolver::_sph_calc_particle_deformation_grad(int i, const
     glm::dmat2 deformation_grad(0.0, 0.0, 0.0, 0.0);
 
     for (int j: initial_neighborhoods_[i]) {
-        // TODO: i==j?
         glm::dvec2 r = p[j].pos - p[i].pos;
         deformation_grad += tensor_product(rest_volumes_[j] * r, precalc_grads_[i].at(j));
     }
@@ -142,6 +140,10 @@ ElasticSolidsSolver::_sph_calc_particle_corotated_deformation_grad(int i, const 
     return { F_corotated, R };
 }
 
+glm::dmat2 ElasticSolidsSolver::_green_strain_tensor(glm::dmat2 F) {
+    return 0.5 * (glm::transpose(F) * F - glm::dmat2(1.0));
+}
+
 glm::dmat2 ElasticSolidsSolver::_infinitesimal_strain_tensor(glm::dmat2 deformation_grad) {
     return 0.5 * (deformation_grad + glm::transpose(deformation_grad)) - glm::dmat2(1.0);
 }
@@ -152,22 +154,54 @@ glm::dmat2 ElasticSolidsSolver::_piola_kirchhoff_stress_tensor(glm::dmat2 strain
         (p_bulk_modulus_ - (2.0/3.0) * p_shear_modulus_) * trace(strain_tensor) * glm::dmat2(1.0);
 }
 
-std::pair<std::vector<glm::dmat2>, std::vector<glm::dmat2>> 
+glm::dmat2 ElasticSolidsSolver::_sph_calc_particle_velocity_gradient(int i, const std::vector<Particle> &p, glm::dmat2 R) {
+    glm::dmat2 L(0.0);
+    for (int j : initial_neighborhoods_[i]) {
+        if (i == j) continue;
+        glm::dvec2 v_ij = p[j].v - p[i].v;
+        L += tensor_product(rest_volumes_[j] * v_ij, R * precalc_grads_[i].at(j));
+    }
+    return L;
+}
+
+glm::dvec2 ElasticSolidsSolver::_sph_particle_damping_force(
+    int i,
+    const std::vector<glm::dmat2> &damping_stress,
+    const std::vector<glm::dmat2> &rotation
+) {
+    glm::dvec2 damping_force(0.0, 0.0);
+
+    for (int j : initial_neighborhoods_[i]) {
+        damping_force += rest_volumes_[i] * rest_volumes_[j] * (
+            damping_stress[i] * rotation[i] * precalc_grads_[i].at(j) -
+            damping_stress[j] * rotation[j] * precalc_grads_[j].at(i)
+        );
+    }
+
+    return damping_force;
+}
+
+std::tuple<std::vector<glm::dmat2>, std::vector<glm::dmat2>, std::vector<glm::dmat2>> 
 ElasticSolidsSolver::_sph_calc_stress_tensors(const std::vector<Particle> &p) {
-    std::vector<glm::dmat2> P(p.size());
+    std::vector<glm::dmat2> P_elastic(p.size());
+    std::vector<glm::dmat2> P_damping(p.size());
     std::vector<glm::dmat2> R(p.size());
 
     #pragma omp parallel for
-    for (int i = 0; i < P.size(); i++) {
+    for (int i = 0; i < p.size(); i++) {
         auto [F_corotated, Ri] = _sph_calc_particle_corotated_deformation_grad(i, p);
 
         glm::dmat2 e = _infinitesimal_strain_tensor(F_corotated);
+        P_elastic[i] = _piola_kirchhoff_stress_tensor(e);
 
-        P[i] = _piola_kirchhoff_stress_tensor(e);
+        glm::dmat2 L = _sph_calc_particle_velocity_gradient(i, p, Ri);
+        glm::dmat2 E_dot = 0.5 * (glm::transpose(L) * F_corotated + glm::transpose(F_corotated) * L);
+        P_damping[i] = p_eta_damping_ * E_dot;
+
         R[i] = Ri;
     }
 
-    return { P, R };
+    return { P_elastic, P_damping, R };
 }
 
 glm::dvec2 ElasticSolidsSolver::_sph_particle_elastic_force(
@@ -187,21 +221,20 @@ glm::dvec2 ElasticSolidsSolver::_sph_particle_elastic_force(
     return elastic_force;
 }
 
-std::vector<glm::dvec2> ElasticSolidsSolver::calc_forces(const std::vector<Particle> &p) {
-    std::vector<glm::dvec2> forces(p.size(), { 0.0, 0.0 });
+std::pair<std::vector<glm::dvec2>, std::vector<glm::dvec2>> 
+ElasticSolidsSolver::calc_forces(const std::vector<Particle> &p) {
+    std::vector<glm::dvec2> elastic_forces(p.size(), { 0.0, 0.0 });
+    std::vector<glm::dvec2> damping_forces(p.size(), { 0.0, 0.0 });
 
     if (initial_state_fixed_ == false) {
+        // для проверки затухания колебаний
         // std::vector<Particle> false_init;
 
         // for (int i = 0; i < p.size(); i++) {
         //     Particle pt(
-        //         // glm::dvec2{
-        //         //     radius * std::cos(angle), 
-        //         //     radius * std::sin(angle)
-        //         // },
         //         0.8 * p[i].pos,
-        //         { 0, 0 },
-        //         { 0, 0 }
+        //         p[i].m,
+        //         p[i].v
         //     );
 
         //     false_init.push_back(pt);
@@ -213,17 +246,14 @@ std::vector<glm::dvec2> ElasticSolidsSolver::calc_forces(const std::vector<Parti
     }
 
     if (p_bulk_modulus_ != 0.0 || p_shear_modulus_ != 0.0) {
-        auto [P, R] = _sph_calc_stress_tensors(p);
+        auto [P_elastic, P_damping, R] = _sph_calc_stress_tensors(p);
 
         #pragma omp parallel for
         for (int i = 0; i < p.size(); i++) {
-            glm::dvec2 elastic_force = _sph_particle_elastic_force(i, P, R);
-
-            // std::cout << "elastic_force=" << elastic_force.x << ' ' << elastic_force.y << '\n';
-
-            forces[i] = elastic_force;
+            elastic_forces[i] = _sph_particle_elastic_force(i, P_elastic, R);
+            damping_forces[i] = _sph_particle_damping_force(i, P_damping, R);
         }
     }
 
-    return forces;
+    return { elastic_forces, damping_forces };
 }

@@ -44,6 +44,7 @@ std::vector<std::vector<int>> get_neighborhoods(const std::vector<Particle> &p, 
     #pragma omp parallel for
     for (int i = 0; i < p.size(); i++) {
         neighborhoods[i] = get_particle_neighborhood(i, p, search_radius, particle_grid);
+        // для проверки кол-ва соседей
         // std::cout << neighborhoods[i].size() << '\n';
     }
 

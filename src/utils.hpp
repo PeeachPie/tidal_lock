@@ -4,12 +4,15 @@
 #include <glm/glm.hpp>
 #include <cmath>
 #include <algorithm>
+#include <iostream>
 
 #include "constants.hpp"
 
 double gen_angle();
 
 double gen_radius(double r, double h);
+
+std::vector<glm::dvec2> gen_hex_ring_points(double r_in, double r_out, double d);
 
 double point_to_segment_dist(const glm::dvec2 &a, const glm::dvec2 &b, const glm::dvec2 &p);
 

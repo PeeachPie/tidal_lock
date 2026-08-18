@@ -15,6 +15,34 @@ double gen_radius(double r, double h) {
     return std::sqrt(r * r + u * ((r + h) * (r + h) - r * r));
 }
 
+std::vector<glm::dvec2> gen_hex_ring_points(double r_in, double r_out, double d) {
+    std::vector<glm::dvec2> points;
+
+    double dx = d;
+    double dy = d * std::sqrt(3.0) / 2.0;
+
+    int n_rows = (int)std::ceil(r_out / dy);
+    int n_cols = (int)std::ceil(r_out / dx) + 1;
+
+    for (int row = -n_rows; row <= n_rows; ++row) {
+        double y = row * dy;
+        double x_offset = (row % 2 != 0) ? dx * 0.5 : 0.0;
+
+        for (int col = -n_cols; col <= n_cols; ++col) {
+            double x = col * dx + x_offset;
+
+            double radius = std::sqrt(x * x + y * y);
+            if (radius < r_in || radius > r_out) {
+                continue;
+            }
+
+            points.push_back({x, y});
+        }
+    }
+
+    return points;
+}
+
 double cross_prod(const glm::dvec2 &a, const glm::dvec2 &b) {
     return a.x * b.y - b.x * a.y;
 }
@@ -77,6 +105,9 @@ void svd(const glm::dmat2& A, glm::dmat2& U, glm::dmat2& D, glm::dmat2& V) {
 glm::dmat2 extract_rotation(const glm::dmat2& A) {
     glm::dmat2 U, D, V;
     svd(A, U, D, V);
+
+    assert(glm::determinant(U * glm::transpose(V)) > 0);
+    // std::cout << "det A=" << glm::determinant(A) << " det R=" << glm::determinant(U * glm::transpose(V)) << std::endl;
 
     return U * glm::transpose(V);
 }

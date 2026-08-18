@@ -10,7 +10,6 @@ find_package(glm REQUIRED)
 find_package(OpenMP REQUIRED)
 
 add_executable(app
-    app.cpp
     glad/src/glad.c
     src/main.cpp
     src/utils.cpp
@@ -22,7 +21,7 @@ add_executable(app
     src/renderer/renderer.cpp
 )
 
-option(ENABLE_ASAN_UBSAN "Build with AddressSanitizer + UndefinedBehaviorSanitizer instead of the optimized build" OFF)
+option(ENABLE_ASAN_UBSAN "Build with Sanitizers" OFF)
 
 if(ENABLE_ASAN_UBSAN)
     set(CMAKE_BUILD_TYPE Debug)

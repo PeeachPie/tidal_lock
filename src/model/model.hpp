@@ -6,6 +6,7 @@
 #include <cmath>
 #include <iostream>
 #include <glm/glm.hpp>
+#include <fstream>
 #include "utils.hpp"
 
 #include "constants.hpp"
@@ -22,6 +23,9 @@ struct ModelSettings {
     double time_step;
 
     double scale;
+    double planet_scale;
+
+    bool debug;
 };
 
 class Model {
@@ -35,23 +39,31 @@ private:
     double time_step_;
 
     double scale_;
+    double planet_scale_;
+
+    bool debug_;
 
     double current_time = 0;
     std::map<std::string, Planet> planets_;
     std::vector<Particle> p_;
 
-    double p_r_ = 0.05 * 20;
+    double p_r_ = 0.05 * 40;
 
+    std::vector<Particle> initial_p_;
+    glm::dvec2 initial_bc_;
+
+    std::ofstream debug_csv_;
+    long long step_counter_ = 0;
 public:
     Model(ModelSettings &settings);
 
     void add_planet(std::string name, Planet planet);
 
-    void add_water_to_planet(std::string planet_name, int p_count, double p_mass, double h);
+    void add_water_to_planet(std::string planet_name, double m, double h, double d);
 
-    void add_particle_planet(Planet planet, int p_count);
+    void add_particle_planet(Planet planet, double d);
 
-    void add_particle_satellite(std::string planet_name, Planet satellite, int p_count, double velocity);
+    void add_particle_satellite(std::string planet_name, const Planet &satellite, double d, double velocity);
 
     Frame get_frame();
 
@@ -59,8 +71,11 @@ public:
 
 private:
     void _add_particle(Particle particle);
-    void _add_water_to_planet(const Planet& planet, int p_count, double p_mass, double h);
+    void _add_water_to_planet(const Planet& planet, double m, double h, double d);
 
     void _planets_next_step(const std::map<std::string, glm::dvec2> &forces);
     void _particles_next_step(const std::vector<glm::dvec2> &forces);
+
+    glm::dvec2 _get_barycenter();
+    std::pair<double, double> _get_angular_velocity(glm::dvec2 satellite_bc, std::string planet_name);
 };
