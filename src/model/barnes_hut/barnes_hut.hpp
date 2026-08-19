@@ -3,6 +3,9 @@
 #include <glm/glm.hpp>
 #include <iostream>
 #include <stdexcept>
+#include <cassert>
+#include <algorithm>
+#include <cmath>
 #include "constants.hpp"
 #include "particle.hpp"
 

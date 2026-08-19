@@ -5,9 +5,9 @@ std::unordered_map<int, std::unordered_map<int, std::vector<int>>> get_particle_
 
     for (int i = 0; i < p.size(); i++) {
         particle_grid[
-            floor(p[i].pos.x / search_radius)
+            std::floor(p[i].pos.x / search_radius)
         ][
-            floor(p[i].pos.y / search_radius)
+            std::floor(p[i].pos.y / search_radius)
         ].push_back(i);
     }
 

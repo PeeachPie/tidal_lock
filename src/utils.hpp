@@ -1,6 +1,8 @@
 #pragma once
 
 #include <random>
+#include <vector>
+#include <cassert> 
 #include <glm/glm.hpp>
 #include <cmath>
 #include <algorithm>

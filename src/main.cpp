@@ -1,8 +1,11 @@
-#include "model.hpp"
-#include "renderer.hpp"
-#include "utils.hpp"
 #include <chrono>
 #include <thread>
+#include <iostream>
+
+#include "model.hpp"
+#include "constants.hpp"
+#include "renderer.hpp"
+#include "utils.hpp"
 
 const double PARTICLE_DIST    = 4500;  // в метрах. Выбор зависит от радиуса планеты и производительности системы
 const double SMOOTHING_LENGTH = 15000; // в метрах. Следует выбирать так, чтобы кол-во соседей было около 30
@@ -70,7 +73,7 @@ int main() {
         DESPINA_MASS,
         glm::dvec2 { 0, calc_orbital_velocity(NEPTUNE_MASS, NEPTUNE_DESPINA_DIST) },
         glm::dvec2 { 0, 0 },
-        -MOON_ANGULAR_VELOCITY * 100  
+        // -MOON_ANGULAR_VELOCITY * 100  
     };
 
     model.add_planet("Нептун", Neptune);

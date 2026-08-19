@@ -7,8 +7,9 @@
 #include <iostream>
 #include <glm/glm.hpp>
 #include <fstream>
-#include "utils.hpp"
+#include <cassert>
 
+#include "utils.hpp"
 #include "constants.hpp"
 #include "particle.hpp"
 #include "elastic_solids.hpp"
