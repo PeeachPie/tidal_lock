@@ -73,7 +73,7 @@ int main() {
         DESPINA_MASS,
         glm::dvec2 { 0, calc_orbital_velocity(NEPTUNE_MASS, NEPTUNE_DESPINA_DIST) },
         glm::dvec2 { 0, 0 },
-        // -MOON_ANGULAR_VELOCITY * 100  
+        -MOON_ANGULAR_VELOCITY * 100  
     };
 
     model.add_planet("Нептун", Neptune);
